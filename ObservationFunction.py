@@ -1,15 +1,19 @@
 import time
+import Util
 
 class ObservationFunction:
 	def __init__(self, model):
 		self.MAX_REWARD = 100
 		self.O = dict()
+		self.Ol = dict()
 		self.R = dict()
+		self.Rl = dict()
 		self.targetCompoundStatesFromObservation = dict()
 		self.model = model
 		self.observations = []
 		self.observationsAmbiguity = [] # No. of states that correspond to the same observation
 		self.directions = [(-1, 0), (0, 1), (1, 0), (0, -1)]
+		self.orderedCombinationsOfAllTargetsExceptOne = Util.getOrderedCombinations(model.robotStates, model.numTargets - 1) if model.numTargets > 1 else []
 
 		start = time.time()
 		print "Initializing observation function..."
@@ -57,6 +61,29 @@ class ObservationFunction:
 			if numObservedTargets > 0:
 				self.R[state] = self.MAX_REWARD/(model.numTargets + 1 - numObservedTargets)
 
+		# Generate partial observation function if system model is decentralized
+		if model.modelRepr == model.DECENTRALIZED:
+			for sa in model.agentCompoundStates:
+				self.Ol[sa] = dict()
+				for stl in model.robotStates:
+					self.Ol[sa][stl] = dict()
+					for o in self.observations:
+						# If number of targets is 1, the decentralized representation is equivalent to the system representation
+						if self.model.numTargets == 1:
+							s = (sa, (stl,))
+							self.Ol[sa][stl][o] = self.eval(s, o)
+							continue
+
+						# If number of targets is greater than 1
+						st = list(self.orderedCombinationsOfAllTargetsExceptOne) # Target compound states
+						for i in range(len(st)):
+							st[i] = st[i] + (stl,) # Note: value of Ol is independent of l (i.e., probability is same regardless of which individual agent is considered)
+						p = 0.0
+						for sti in st:
+							s = (sa, sti)
+							p += self.eval(s, o)
+						self.Ol[sa][stl][o] = p/len(self.model.robotStates)
+
 		# Perform validy check on observation function
 		stop = time.time()
 		if self.isValid():
@@ -66,9 +93,15 @@ class ObservationFunction:
 
 	def isValid(self):
 		for s in self.model.states:
-			observationFcnSuccess = sum(list(self.O[s].values())) - 1.0 < 0.00000000001
+			observationFcnSuccess = abs(sum(list(self.O[s].values())) - 1.0) < 0.00000000001
 			if not observationFcnSuccess:
 				return False
+		if self.model.modelRepr == self.model.DECENTRALIZED:
+			for sa in self.model.agentCompoundStates:
+				for stl in self.model.robotStates:
+					partialObservationFcnSuccess = abs(sum(list(self.Ol[sa][stl].values())) - 1.0) < 0.00000000001
+					if not partialObservationFcnSuccess:
+						return False
 		return True
 
 	def printObservationsAndAbiguityCount(self):
@@ -115,3 +148,10 @@ class ObservationFunction:
 		#	return None
 		#print "Observation function evaluated as 0. Using optimal implementation, this evaluation should be unnecessary."
 		return 0.0
+
+	def evalOl(self, sa, stl, o):
+		"""
+		Returns probability of system making observation o given agent
+		compound state sa and a single target state stl (l is target index).
+		"""
+		return self.Ol[sa][stl][o]

@@ -17,3 +17,17 @@ def getOrderedCombinations(elements, n):
 	for i in range(len(combinations)):
 		combinations[i] = tuple(combinations[i])
 	return combinations
+
+def getCombinationsDifferentSets(sets):
+	"""Returns all combinations where different sets are specified for each element."""
+	combinations = []
+	__getCombinationsDifferentSets(sets, tuple(), combinations)
+	return combinations
+def __getCombinationsDifferentSets(sets, combination = tuple(), combinations = []):
+	level = len(combination)
+	if level == len(sets) - 1:
+		for i in sets[level]:
+			combinations.append(combination + (i,))
+	else:
+		for i in sets[level]:
+			__getCombinationsDifferentSets(sets, combination + (i,), combinations)

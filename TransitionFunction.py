@@ -3,6 +3,9 @@ import time
 class TransitionFunction:
 	def __init__(self, model):
 		self.T = dict()
+		self.Ta = dict()
+		self.Tt = dict()
+		self.Ttl = dict()
 		self.model = model
 
 		start = time.time()
@@ -10,9 +13,9 @@ class TransitionFunction:
 
 		# Generate agent and target transition functions
 		agentTransitionFcn = dict()
-		targetTransitionFcn = dict()
 		for robotState in model.robotStates:
 
+			"""IS THIS EVEN NECESSARY?"""
 			# Agent transition function
 			agentState = robotState
 			agentTransitionFcn[agentState] = dict()
@@ -23,27 +26,29 @@ class TransitionFunction:
 
 			# Target transition function
 			targetState = robotState
-			targetTransitionFcn[targetState] = dict()
+			#targetTransitionFcn[targetState] = dict()
+			self.Ttl[targetState] = dict()
 			possibleTargetEndStates = TransitionFunction.__getPossibleTargetEndStates(model, targetState)
 			for targetEndState in possibleTargetEndStates:
-				targetTransitionFcn[targetState][targetEndState] = 1.0/len(possibleTargetEndStates)
+				#targetTransitionFcn[targetState][targetEndState] = 1.0/len(possibleTargetEndStates)
+				self.Ttl[targetState][targetEndState] = 1.0/len(possibleTargetEndStates)
 
 		# Generate agent compound transition function
-		agentCompoundTransitionFcn = dict()
+		self.Ta = dict()
 		for agentCompoundState in model.agentCompoundStates:
-			agentCompoundTransitionFcn[agentCompoundState] = dict()
+			self.Ta[agentCompoundState] = dict()
 			for agentCompoundAction in model.actions:
-				agentCompoundTransitionFcn[agentCompoundState][agentCompoundAction] = dict()
+				self.Ta[agentCompoundState][agentCompoundAction] = dict()
 				agentCompoundEndState = TransitionFunction.__getRobotCompoundEndState(model, agentCompoundState, agentCompoundAction)
-				agentCompoundTransitionFcn[agentCompoundState][agentCompoundAction][agentCompoundEndState] = 1.0
+				self.Ta[agentCompoundState][agentCompoundAction][agentCompoundEndState] = 1.0
 
 		# Generate target compound transition function
-		targetCompoundTransitionFcn = dict()
+		self.Tt = dict()
 		for targetCompoundState in model.targetCompoundStates:
-			targetCompoundTransitionFcn[targetCompoundState] = dict()
+			self.Tt[targetCompoundState] = dict()
 			possibleTargetCompoundEndStates = TransitionFunction.__getPossibleTargetCompoundEndStates(model, targetCompoundState)
 			for targetCompoundEndState in possibleTargetCompoundEndStates:
-				targetCompoundTransitionFcn[targetCompoundState][targetCompoundEndState] = 1.0/len(possibleTargetCompoundEndStates)
+				self.Tt[targetCompoundState][targetCompoundEndState] = 1.0/len(possibleTargetCompoundEndStates)
 
 		# Generate system transition function
 		tot = len(model.states)
@@ -64,8 +69,8 @@ class TransitionFunction:
 				possibleTargetCompoundEndStates = TransitionFunction.__getPossibleTargetCompoundEndStates(model, targetCompoundState)
 
 				for targetCompoundEndState in possibleTargetCompoundEndStates:
-					pA = agentCompoundTransitionFcn[agentCompoundState][action][agentCompoundEndState]
-					pT = targetCompoundTransitionFcn[targetCompoundState][targetCompoundEndState]
+					pA = self.Ta[agentCompoundState][action][agentCompoundEndState]
+					pT = self.Tt[targetCompoundState][targetCompoundEndState]
 					endState = (agentCompoundEndState, targetCompoundEndState)
 					self.T[state][action][endState] = pA*pT
 
@@ -157,4 +162,26 @@ class TransitionFunction:
 		#	print "Action invalid during transition function evaluation: " + str(a)
 		#	return None
 		#print "Transition function evaluated as 0. Using optimal implementation, this evaluation should be unnecessary."
+		return 0.0
+
+	def evalTa(self, s1, a, s2):
+		"""Evatuates agent compound transition function for given initial state and end state."""
+		if self.Ta.get(s1, None) != None:
+			if self.Ta[s1].get(a, None) != None:
+				if self.Ta[s1][a].get(s2, None) != None:
+					return self.Ta[s1][a][s2]
+		return 0.0
+
+	def evalTt(self, s1, s2):
+		"""Evatuates agent compound transition function for given initial state and end state."""
+		if self.Tt.get(s1, None) != None:
+			if self.Tt[s1].get(s2, None) != None:
+				return self.Tt[s1][s2]
+		return 0.0
+
+	def evalTtl(self, stl1, stl2):
+		"""Evaluates partial target transition funciton for given initial and end states."""
+		if self.Ttl.get(stl1, None) != None:
+			if self.Ttl[stl1].get(stl2, None) != None:
+				return self.Ttl[stl1][stl2]
 		return 0.0

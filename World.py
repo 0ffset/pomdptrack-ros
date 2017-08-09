@@ -1,8 +1,20 @@
+import random
+
 class World:
+	# States keywords
+	UPPER_LEFT   = 0
+	UPPER_RIGHT  = 1
+	BOTTOM_LEFT  = 2
+	BOTTOM_RIGHT = 3
+	RANDOM_STATE = 4
+
 	def __init__(self, grid = None):
-		self.grid = World.__getDefaultGrid() if grid == None else grid
-		self.gridNumRows = len(self.grid)
-		self.gridNumCols = len(self.grid[0])
+		self.grid           = World.__getDefaultGrid() if grid == None else grid
+		self.gridNumRows    = len(self.grid)
+		self.gridNumCols    = len(self.grid[0])
+		self.robotStates    = []
+		self.__initRobotStates()
+		self.numRobotStates = len(self.robotStates)
 
 	@staticmethod
 	def __getDefaultGrid():
@@ -26,6 +38,28 @@ class World:
 	def isValidRobotState(self, cell):
 		"""Determines if a cell is a valid robot state."""
 		return self.isWithinBounds(cell) and not self.isWall(cell)
+
+	def __initRobotStates(self):
+		"""Enumerate all valid robot states in grid."""
+		for i in range(self.gridNumRows):
+			for j in range(self.gridNumCols):
+				state = (i, j)
+				if self.isValidRobotState(state):
+					self.robotStates.append(state)
+
+	def getState(self, keyword):
+		"""Returns the state corresponding to given keyword."""
+		if keyword == World.UPPER_LEFT:
+			return (0, 0)
+		elif keyword == World.UPPER_RIGHT:
+			return (0, self.gridNumCols - 1)
+		elif keyword == World.BOTTOM_LEFT:
+			return (self.gridNumRows - 1, 0)
+		elif keyword == World.BOTTOM_RIGHT:
+			return (self.gridNumRows - 1, self.gridNumCols - 1)
+		elif keyword == World.RANDOM_STATE:
+			i = random.randint(0, self.numRobotStates - 1)
+			return self.robotStates[i]
 
 	def printWorld(self, state):
 		"""Prints world based on Model state."""
