@@ -38,8 +38,11 @@ class Model:
 		self.agentActions          = [(0, 0), (-1, 0), (0, 1), (1, 0), (0, -1)]
 		self.targetActionLabels    = ["stay", "go N", "go E", "go S", "go W"]
 		self.targetActions         = [(0, 0), (-1, 0), (0, 1), (1, 0), (0, -1)]
-		self.actions               = Util.getOrderedCombinations(self.agentActions, self.numAgents)
-		self.targetCompoundActions = Util.getOrderedCombinations(self.targetActions, self.numTargets)
+		#self.targetActions         = [(0, 0), (-1, 0), (0, 1), (1, 0), (0, -1), (-2, 0), (0, 2), (2, 0), (0, -2)]
+		#self.targetActions         = [(0, 0), (-1, 0), (0, 1), (1, 0), (0, -1), (-2, 0), (0, 2), (2, 0), (0, -2), (-3, 0), (0, 3), (3, 0), (0, -3)]
+		#self.targetActions         = [(0, 0)]
+		self.actions               = Util.cartesianPower(self.agentActions, self.numAgents) #Util.getOrderedCombinations(self.agentActions, self.numAgents)
+		self.targetCompoundActions = Util.cartesianPower(self.targetActions, self.numTargets) #Util.getOrderedCombinations(self.targetActions, self.numTargets)
 		
 		# Initialize lists of all states
 		self.robotStates          = self.world.robotStates
@@ -67,6 +70,9 @@ class Model:
 
 		# Initialize policy solver
 		self.solver = Solver(self, self.discount, self.horizon)
+
+		# If results should be printed in terminal
+		self.doPrint = False
 
 	def getInitState(self, initStateInput):
 		"""Get the initial state of the system from input on initialization."""
@@ -125,13 +131,14 @@ class Model:
 		print "Initializing state space..."
 
 		# Enumerate agent and target compound states
-		self.agentCompoundStates = Util.getOrderedCombinations(self.robotStates, self.numAgents)
-		self.targetCompoundStates = Util.getOrderedCombinations(self.robotStates, self.numTargets)
+		self.agentCompoundStates = Util.cartesianPower(self.robotStates, self.numAgents) #Util.getOrderedCombinations(self.robotStates, self.numAgents)
+		self.targetCompoundStates = Util.cartesianPower(self.robotStates, self.numTargets) #Util.getOrderedCombinations(self.robotStates, self.numTargets)
 
 		# Enumerate system states
-		for agentCompoundState in self.agentCompoundStates:
-			for targetCompoundState in self.targetCompoundStates:
-				self.states.append((agentCompoundState, targetCompoundState))
+		#for agentCompoundState in self.agentCompoundStates:
+		#	for targetCompoundState in self.targetCompoundStates:
+		#		self.states.append((agentCompoundState, targetCompoundState))
+		self.states = Util.cartesianProduct(self.agentCompoundStates, self.targetCompoundStates)
 
 		stop = time.time()
 		print "State space (" + str(len(self.states)) + " states) initialized successfully in " + str(stop - start) + " s."
@@ -153,11 +160,11 @@ class Model:
 		Evaluates transition function for given initial state, action and end state,
 		i.e. returns probability of system ending up in s2 after starting in s1 and taking action a
 		"""
-		if s2 == None:
-			PT = self.transitionFcn.T[s1][a]
-			if len(PT) == 1:
-				return PT.keys()[0]
-			return PT
+		#if s2 == None:
+		#	PT = self.transitionFcn.T[s1][a]
+		#	if len(PT) == 1:
+		#		return PT.keys()[0]
+		#	return PT
 		return self.transitionFcn.eval(s1, a, s2)
 
 	def Ta(self, s1, a, s2 = None):
@@ -261,13 +268,32 @@ class Model:
 				checkpointIndeces[i] = (checkpointIndex + 1)%len(checkpoints[i])
 		return checkpointIndeces, maxSteps
 
+	def __sampleState(self, state, action):
+		"""Samples a system end state given initial state and action."""
+		agentCompoundState, targetCompoundState = state[0], state[1]
+		agentCompoundEndState = self.Ta(agentCompoundState, action)
+		PTt = self.transitionFcn.Tt[targetCompoundState]
+		st = numpy.random.choice(range(len(PTt)), p = PTt.values())
+		targetCompoundEndState = PTt.keys()[st]
+		endState = (agentCompoundEndState, targetCompoundEndState)
+		return endState
+
+	def __sampleObservation(self, state):
+		"""Samples an observation given the state."""
+		PO = self.observationFcn.O[self.state]
+		o = numpy.random.choice(range(len(PO)), p = PO.values())
+		observation = PO.keys()[o]
+		return observation
+
 	def update(self, doPrint = False):
 		"""
 		Calculates optimal action for current belief, updates system state, makes observation
 		and updates belief state.
 		"""
+		self.doPrint = doPrint
 		self.printList = [] # List for simultaneous print later (to avoid twitchy print)
-		print "\nPerforming system update..."
+		if doPrint:
+			print "\nPerforming system update..."
 
 		# Calculate optimal action
 		self.maxSteps = [self.maxSteps[i] - 1 for i in range(len(self.maxSteps))] # Decrement max allowed steps by 1 for all agents
@@ -277,11 +303,13 @@ class Model:
 			action = self.solver.getRandomAllowedAction()
 		elif self.policyOption == Model.RTBSS_CHECKPOINT:
 			if self.modelRepr == Model.SYSTEM:
-				print "Performing RTBSS for system representation..."
-				action = self.solver.checkpointRTBSS()
+				if doPrint:
+					print "Performing RTBSS for system representation..."
+				action, value = self.solver.checkpointRTBSS()
 			elif self.modelRepr == Model.DECENTRALIZED:
-				print "Performing RTBSS for decentralized representation..."
-				action = self.solver.checkpointDecentralizedRTBSS()
+				if doPrint:
+					print "Performing RTBSS for decentralized representation..."
+				action, value = self.solver.checkpointDecentralizedRTBSS()
 		
 		# Update checkpoints
 		self.checkpointIndeces, self.maxSteps = self.updateCheckpoints()
@@ -295,18 +323,14 @@ class Model:
 		self.printList.append("Max steps left: " + str(self.maxSteps))
 
 		# Update system state
-		agentCompoundState = self.state[0] 
-		PT = self.transitionFcn.T[self.state][action]
-		s = numpy.random.choice(range(len(PT)), p = PT.values())
-		self.state = PT.keys()[s]
+		agentCompoundState, targetCompoundState = self.state[0], self.state[1]
+		self.state = self.__sampleState(self.state, action)
 		self.printList.append("State: " + str(self.state))
 		self.reward = self.R(self.state)
 		self.printList.append("Reward: " + str(self.reward))
 
 		# Make observation
-		PO = self.observationFcn.O[self.state]
-		o = numpy.random.choice(range(len(PO)), p = PO.values())
-		self.observation = PO.keys()[o]
+		self.observation = self.__sampleObservation(self.state)
 		self.observationList = list(self.observation) # Enumarate all observations
 		self.printList.append("Made observation: " + str(self.observation))
 
@@ -386,7 +410,8 @@ class Model:
 						targetsPossiblyAtObservedState.append(i)
 				if len(targetsPossiblyAtObservedState) == 1:
 					targetId = targetsPossiblyAtObservedState[0]
-					print "Only target " + str(targetId+1) + " can be in " + str(observedState)
+					if self.doPrint:
+						print "Only target " + str(targetId+1) + " can be in " + str(observedState)
 					canDeduce = True
 					observedTargets[self.observationList.index(observedState)] = [targetId]
 					#print "possibleTargets: " + str(possibleTargets)
@@ -403,12 +428,14 @@ class Model:
 
 	def deduceWhichTarget(self, observedState):
 		"""Returns target index if possible to deduce from belief which target was observed, else returns None."""
-		print "From deduceWhichTarget:"
-		print "\tdeduceWhichTarget: " + str(observedState)
-		print "\tpartialBeliefs: "
+		if self.doPrint:
+			print "From deduceWhichTarget:"
+			print "\tdeduceWhichTarget: " + str(observedState)
+			print "\tpartialBeliefs: "
 		targetsPossiblyAtObservedState = []
 		for i in range(len(self.partialBeliefs)):
-			print str(self.partialBeliefs[i])
+			if self.doPrint:
+				print str(self.partialBeliefs[i])
 			if self.partialBeliefs[i].get(observedState, None) != None:
 				targetsPossiblyAtObservedState.append(i)
 		if len(targetsPossiblyAtObservedState) == 1:
@@ -431,10 +458,15 @@ class Model:
 		"""Returns updated unnormalized partial belief."""
 		newPartialBelief = dict()
 		
-		# Calculate new unnormalized belief based on tau (belief transition function)
-		#possibleTargetCompoundEndStates = self.observationFcn.targetCompoundStatesFromObservation[observation][agentCompoundEndState]
+		# Calculate new unnormalized belief based on tau (belief transition function)]
+		if self.observationFcn.targetStatesFromObservation[observation].get(agentCompoundEndState, None) == None:
+			return False
+		else:
+			possibleTargetEndStates = self.observationFcn.targetStatesFromObservation[observation][agentCompoundEndState]
+		
 		count = 0
-		for targetEndState in self.robotStates:
+		#for targetEndState in self.robotStates:
+		for targetEndState in possibleTargetEndStates:
 			p = 0
 			for targetState in partialBelief.keys():
 				p += self.Ttl(targetState, targetEndState)*partialBelief[targetState]
@@ -442,7 +474,7 @@ class Model:
 			newPartialBelief[targetEndState] = self.Ol(agentCompoundEndState, targetEndState, observation)*p
 
 		# If all calculated probabilities are 0, the new belief is invalid
-		if sum(newPartialBelief.values()) < 0.000001:
+		if sum(newPartialBelief.values()) < 1e-10:#Util.EPSILON:
 			return False
 		
 		# Add info to print list, if applicable
@@ -479,7 +511,7 @@ class Model:
 		count = 0
 		for targetCompoundEndState in possibleTargetCompoundEndStates:
 			endState = (agentCompoundEndState, targetCompoundEndState)
-			p = 0
+			p = 0.0
 			for targetCompoundState in belief.keys():
 				state = (agentCompoundState, targetCompoundState)
 				p += self.T(state, action, endState)*belief[targetCompoundState]
@@ -487,7 +519,7 @@ class Model:
 			newBelief[targetCompoundEndState] = self.O(endState, observation)*p
 
 		# If all calculated probabilities are 0, the new belief is invalid
-		if sum(newBelief.values()) < 0.000001:
+		if sum(newBelief.values()) < Util.EPSILON:
 			return False
 		
 		# Add info to print list, if applicable
@@ -516,19 +548,20 @@ class Model:
 		normFactor = 1/sum(belief.values())
 		for targetCompoundState in belief.keys():
 			belief[targetCompoundState] *= normFactor
-			if abs(belief[targetCompoundState]) < 0.00000000001:
+			if abs(belief[targetCompoundState]) < Util.EPSILON:
 				belief.pop(targetCompoundState)
 		return belief
 
 	def refineBelief(self, observedTargets, observationList = None):
 		"""Refines the belief based on knowledge that observation i corresponds to specified targets."""
-		#print "From refineBelief:"
-		print "Beliefs before refinement:"
-		for i in range(len(self.partialBeliefs)):
-			print "Belief target " + str(i + 1) + ":"
-			partialBelief = self.partialBeliefs[i]
-			for targetState in partialBelief.keys():
-				print "\t" + str(targetState) + ": " + str(partialBelief[targetState])
+		if self.doPrint:
+			print "From refineBelief:"
+			print "Beliefs before refinement:"
+			for i in range(len(self.partialBeliefs)):
+				print "Belief target " + str(i + 1) + ":"
+				partialBelief = self.partialBeliefs[i]
+				for targetState in partialBelief.keys():
+					print "\t" + str(targetState) + ": " + str(partialBelief[targetState])
 		#print "\tself.ambiguousObservation: " + str(self.ambiguousObservation)
 		#print "\tself.observationList: " + str(self.observationList)
 		if observationList == None:
@@ -581,12 +614,13 @@ class Model:
 				self.partialBeliefs[targetId] = self.getNormalizedNonZeroBelief(self.partialBeliefs[targetId])
 		
 		# Print results
-		print "Beliefs after refinement:"
-		for i in range(len(self.partialBeliefs)):
-			print "Refined partial belief " + str(i + 1)
-			partialBelief = self.partialBeliefs[i]
-			for targetState in partialBelief.keys():
-				print "\t" + str(targetState) + ": " + str(partialBelief[targetState])
+		if self.doPrint:
+			print "Beliefs after refinement:"
+			for i in range(len(self.partialBeliefs)):
+				print "Refined partial belief " + str(i + 1)
+				partialBelief = self.partialBeliefs[i]
+				for targetState in partialBelief.keys():
+					print "\t" + str(targetState) + ": " + str(partialBelief[targetState])
 
 	def getPartialBeliefs(self, belief = None):
 		"""Returns beliefs for each individual target."""
@@ -651,7 +685,8 @@ class Model:
 					if observedTargets[i] == None:
 						observedTargets[i] = []
 					observedTargets[i].append(targetId)
-		print "Simulated human gave input: " + str(observedTargets)
+		if self.doPrint:
+			print "Simulated human gave input: " + str(observedTargets)
 		return observedTargets
 
 	def printWorld(self):

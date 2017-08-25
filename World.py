@@ -39,6 +39,16 @@ class World:
 		"""Determines if a cell is a valid robot state."""
 		return self.isWithinBounds(cell) and not self.isWall(cell)
 
+	def getNeighboringRobotStates(self, cell):
+		"""Returns a set of cells in the neighborhood of cell."""
+		relNeighborCoords = [(-1, 0), (-1, -1), (0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1)]
+		neighbors = set()
+		for v in relNeighborCoords:
+			neighbor = (cell[0] + v[0], cell[1] + v[1])
+			if self.isValidRobotState(neighbor):
+				neighbors.add(neighbor)
+		return neighbors
+
 	def __initRobotStates(self):
 		"""Enumerate all valid robot states in grid."""
 		for i in range(self.gridNumRows):

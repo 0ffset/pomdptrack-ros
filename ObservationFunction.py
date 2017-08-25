@@ -9,11 +9,14 @@ class ObservationFunction:
 		self.R = dict()
 		self.Rl = dict()
 		self.targetCompoundStatesFromObservation = dict()
+		self.targetStatesFromObservation = dict()
+		self.targetStatesFromObservation2 = dict()
 		self.model = model
 		self.observations = []
 		self.observationsAmbiguity = [] # No. of states that correspond to the same observation
 		self.directions = [(-1, 0), (0, 1), (1, 0), (0, -1)]
 		self.orderedCombinationsOfAllTargetsExceptOne = Util.getOrderedCombinations(model.robotStates, model.numTargets - 1) if model.numTargets > 1 else []
+		self.observableStates = dict()
 
 		start = time.time()
 		print "Initializing observation function..."
@@ -22,19 +25,19 @@ class ObservationFunction:
 		# Each agent can observe in all defined direction until invalid state (wall etc.) is reached
 		for state in model.states:
 			self.O[state] = dict()
-			agentCompoundState, targetCompoundState = state[0], state[1]
+			agentCompoundState, targetCompoundState = state
+			self.observableStates[agentCompoundState] = set()
 			observation = [None for i in range(model.numTargets)]
 			for agentState in agentCompoundState:
-				
 				observeState = agentState
 				for i in range(len(targetCompoundState)):
 					targetState = targetCompoundState[i]
 					if observeState == targetState:
 						observation[i] = targetState
-				
 				for direction in self.directions:
 					observeState = (agentState[0] + direction[0], agentState[1] + direction[1])
 					while model.world.isValidRobotState(observeState):
+						self.observableStates[agentCompoundState].add(observeState)
 						for i in range(len(targetCompoundState)):
 							targetState = targetCompoundState[i]
 							if observeState == targetState:
@@ -47,17 +50,25 @@ class ObservationFunction:
 				self.observations.append(observation)
 				self.observationsAmbiguity.append(1)
 				self.targetCompoundStatesFromObservation[observation] = dict()
+				self.targetStatesFromObservation[observation] = dict()
 			else:
 				self.observationsAmbiguity[self.observations.index(observation)] += 1
 			
-			if agentCompoundState not in self.targetCompoundStatesFromObservation[observation].keys():
+			# Map from observation and agent compound state to possible target compound states
+			if self.targetCompoundStatesFromObservation[observation].get(agentCompoundState, None) == None:
 				self.targetCompoundStatesFromObservation[observation][agentCompoundState] = [targetCompoundState]
 			else:
 				self.targetCompoundStatesFromObservation[observation][agentCompoundState].append(targetCompoundState)
+			
+			# Map from observation and agent compound state to possible target states
+			if self.targetStatesFromObservation[observation].get(agentCompoundState, None) == None:
+				self.targetStatesFromObservation[observation][agentCompoundState] = set()
+			for targetState in targetCompoundState:
+				self.targetStatesFromObservation[observation][agentCompoundState].add(targetState)
+			
+			#print "self.targetStatesFromObservation[" + str(observation) + "]" + str(self.targetStatesFromObservation[observation])
 
 			self.O[state][observation] = 1.0
-			#if self.R.get(state, None) == None:
-			#	self.R[state] = dict()
 			if numObservedTargets > 0:
 				self.R[state] = self.MAX_REWARD/(model.numTargets + 1 - numObservedTargets)
 
@@ -83,6 +94,13 @@ class ObservationFunction:
 							s = (sa, sti)
 							p += self.eval(s, o)
 						self.Ol[sa][stl][o] = p/len(self.model.robotStates)
+						
+						if p > Util.EPSILON:
+							if self.targetStatesFromObservation2.get(o, None) == None:
+								self.targetStatesFromObservation2[o] = dict()
+							if self.targetStatesFromObservation2[o].get(sa, None) == None:
+								self.targetStatesFromObservation2[o][sa] = set()
+							self.targetStatesFromObservation2[o][sa].add(stl)
 
 		# Perform validy check on observation function
 		stop = time.time()
@@ -93,13 +111,13 @@ class ObservationFunction:
 
 	def isValid(self):
 		for s in self.model.states:
-			observationFcnSuccess = abs(sum(list(self.O[s].values())) - 1.0) < 0.00000000001
+			observationFcnSuccess = abs(sum(list(self.O[s].values())) - 1.0) < Util.EPSILON
 			if not observationFcnSuccess:
 				return False
 		if self.model.modelRepr == self.model.DECENTRALIZED:
 			for sa in self.model.agentCompoundStates:
 				for stl in self.model.robotStates:
-					partialObservationFcnSuccess = abs(sum(list(self.Ol[sa][stl].values())) - 1.0) < 0.00000000001
+					partialObservationFcnSuccess = abs(sum(list(self.Ol[sa][stl].values())) - 1.0) < Util.EPSILON
 					if not partialObservationFcnSuccess:
 						return False
 		return True

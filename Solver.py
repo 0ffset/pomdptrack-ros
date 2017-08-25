@@ -1,6 +1,7 @@
 import time
 import numpy.random
 import Util
+from multiprocessing.pool import ThreadPool
 
 class Solver:
 	def __init__(self, model, discount = 0.95, horizon = 4):
@@ -13,6 +14,8 @@ class Solver:
 		elif model.modelRepr == model.DECENTRALIZED:
 			self.observations = model.agentObservations
 		self.__initMinSteps()
+		self.numRecursions = 0
+		self.pool = ThreadPool()
 
 	def __initMinSteps(self):
 		"""Initializes the minimum steps function."""
@@ -114,25 +117,47 @@ class Solver:
 		"""Returns optimal action based on decentralized RTBSS with checkpoints."""
 		start = time.time()
 		actionValuesList = []
+		actionSumValues = dict()
+		for action in self.model.actions:
+			actionSumValues[action] = 0.0
 		optimalAction = None
 		optimalValue = -float('inf')
 		i = 0
+		
+		#actionValuePairs = self.pool.map(self.checkpointRTBSS, self.model.partialBeliefs)
+		#optimalAction, optimalValue = actionValuePairs[0]
+		#for a, v in actionValuePairs:
+		#	if v > optimalValue:
+		#		optimalValue = v
+		#		optimalAction = a
+		
 		for partialBelief in self.model.partialBeliefs:
-			print "Performing RTBSS for target " + str(i) + " belief..."
-			action, value = self.checkpointRTBSS(partialBelief, True)
+			if self.model.doPrint:
+				print "Performing RTBSS for target " + str(i) + " belief..."
+			action, value = self.checkpointRTBSS(partialBelief)
 			actionValuesList.append(self.actionValues)
+			for a in self.actionValues.keys():
+				actionSumValues[a] += self.actionValues[a]
 			if value > optimalValue:
 				optimalValue = value
 				optimalAction = action
 			i += 1
-		elapsedTime = time.time() - start
-		print "Optimal action based on decentralized RTBSS with horizon " + str(self.horizon) + " found in " + str(elapsedTime) + " s."
-		print "Action: " + str(optimalAction) + str(", value: ") + str(optimalValue)
-		return optimalAction
+		#print "actionSumValues: " + str(actionSumValues)
 
-	def checkpointRTBSS(self, belief = None, returnOptimalValue = False):
+		# TEST: USE SUM OF BOTH VALUES TO DETERMINE ACTION
+		optimalAction = max(actionSumValues.iterkeys(), key = (lambda key: actionSumValues[key]))
+		optimalValue = max(actionSumValues.values())
+		
+		elapsedTime = time.time() - start
+		if self.model.doPrint:
+			print "Optimal action based on decentralized RTBSS with horizon " + str(self.horizon) + " found in " + str(elapsedTime) + " s."
+			print "Action: " + str(optimalAction) + str(", value: ") + str(optimalValue)
+		return optimalAction, optimalValue
+
+	def checkpointRTBSS(self, belief = None):
 		"""Returns optimal system action based on RTBSS with checkpoints."""
 		belief = self.model.belief if belief == None else belief
+		self.numRecursions = 0
 
 		start = time.time()
 		self.actionValues = dict()
@@ -141,19 +166,22 @@ class Solver:
 
 		# Perform RTBSS
 		self.__checkpointRTBSS(self.model.state[0], dict(belief), int(self.horizon), self.model.checkpoints, list(self.model.checkpointIndeces), list(self.model.maxSteps), 0.0)
+		if self.model.doPrint:
+			print "Number of recursions: " + str(self.numRecursions)
 
 		# Pick out optimal action (action with highest value) and return
 		optimalAction = max(self.actionValues.iterkeys(), key = (lambda key: self.actionValues[key]))
 		optimalValue = max(self.actionValues.values())
 		elapsedTime = time.time() - start
-		print self.actionValues
-		print "Optimal action based on RTBSS with horizon " + str(self.horizon) + " found in " + str(elapsedTime) + " s."
-		if returnOptimalValue:
-			return optimalAction, optimalValue
-		return optimalAction
+		if self.model.doPrint:
+			print self.actionValues
+			print "Optimal action based on RTBSS with horizon " + str(self.horizon) + " found in " + str(elapsedTime) + " s."
+		return optimalAction, optimalValue
 
 	def __checkpointRTBSS(self, agentCompoundState, belief, depth, checkpoints, checkpointIndeces, maxSteps, accExpReward):
 		"""Helper function for recursive belief tree search in RTBSS-based solver."""
+		self.numRecursions += 1
+
 		if depth == 0:
 			finalValue = accExpReward + self.discount**self.horizon*self.getExpectedReward(agentCompoundState, belief)
 			return finalValue
@@ -172,11 +200,14 @@ class Solver:
 
 		for action in allowedActions:
 			if depth == self.horizon:
-				print "RTBSS for action " + str(action)
+				if self.model.doPrint:
+					print "RTBSS for action " + str(action)
 			expReward = 0.0
 			for observation in self.observations: #"""CAN WE LOOP OVER SUBSET?"""
 				agentCompoundEndState = self.model.Ta(agentCompoundState, action)
+				#start = time.time()
 				newUnnormalizedBelief = self.getNewUnnormalizedBelief(belief, action, observation, agentCompoundState, agentCompoundEndState)
+				#print "Time calc belief: " + str(time.time() - start)
 
 				if newUnnormalizedBelief == False: # This means that observation is impossible given belief and action
 					continue
@@ -184,9 +215,10 @@ class Solver:
 				newBelief = self.model.getNormalizedNonZeroBelief(newUnnormalizedBelief)
 
 				expReward += self.discount**(self.horizon - depth)*observationProbability*self.__checkpointRTBSS(agentCompoundEndState, newBelief, depth - 1, checkpoints, checkpointIndeces, maxSteps, accExpReward)
-
+				
 			if depth == self.horizon:
-				print "Horizon reached for action " + str(action)
+				if self.model.doPrint:
+					print "Horizon reached for action " + str(action)
 				if expReward > self.actionValues[action]:
 					self.actionValues[action] = expReward
 

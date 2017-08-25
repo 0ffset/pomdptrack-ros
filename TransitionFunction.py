@@ -1,9 +1,11 @@
+import Util
 import time
 
 class TransitionFunction:
 	def __init__(self, model):
 		self.T = dict()
 		self.Ta = dict()
+		self.Tak = dict()
 		self.Tt = dict()
 		self.Ttl = dict()
 		self.model = model
@@ -18,19 +20,17 @@ class TransitionFunction:
 			"""IS THIS EVEN NECESSARY?"""
 			# Agent transition function
 			agentState = robotState
-			agentTransitionFcn[agentState] = dict()
+			self.Tak[agentState] = dict()
 			for agentAction in model.agentActions:
-				agentTransitionFcn[agentState][agentAction] = dict()
+				self.Tak[agentState][agentAction] = dict()
 				agentEndState = TransitionFunction.__getRobotEndState(model, agentState, agentAction)
-				agentTransitionFcn[agentState][agentAction][agentEndState] = 1.0
+				self.Tak[agentState][agentAction][agentEndState] = 1.0
 
 			# Target transition function
 			targetState = robotState
-			#targetTransitionFcn[targetState] = dict()
 			self.Ttl[targetState] = dict()
 			possibleTargetEndStates = TransitionFunction.__getPossibleTargetEndStates(model, targetState)
 			for targetEndState in possibleTargetEndStates:
-				#targetTransitionFcn[targetState][targetEndState] = 1.0/len(possibleTargetEndStates)
 				self.Ttl[targetState][targetEndState] = 1.0/len(possibleTargetEndStates)
 
 		# Generate agent compound transition function
@@ -51,6 +51,7 @@ class TransitionFunction:
 				self.Tt[targetCompoundState][targetCompoundEndState] = 1.0/len(possibleTargetCompoundEndStates)
 
 		# Generate system transition function
+		"""
 		tot = len(model.states)
 		count = 0
 		currProc = 0
@@ -75,6 +76,7 @@ class TransitionFunction:
 					self.T[state][action][endState] = pA*pT
 
 			count += 1
+		"""
 
 		# Perform transition function validity check
 		stop = time.time()
@@ -120,11 +122,22 @@ class TransitionFunction:
 
 	def isValid(self):
 		"""Returns weather transition function is valid or not."""
-		for s in self.model.states:
+		#for s in self.model.states:
+		#	for a in self.model.actions:
+		#		transitionFcnSuccess = sum(list(self.T[s][a].values())) - 1.0 < Util.EPSILON
+		#		if not transitionFcnSuccess:
+		#			return False
+		for sa in self.model.agentCompoundStates:
 			for a in self.model.actions:
-				transitionFcnSuccess = sum(list(self.T[s][a].values())) - 1.0 < 0.000000000001
-				if not transitionFcnSuccess:
+				agentTransitionFcnSuccess = abs(sum(self.Ta[sa][a].values()) - 1.0) < Util.EPSILON
+				if not agentTransitionFcnSuccess:
+					print sum(self.Ta[sa][a].values())
 					return False
+		for st in self.model.targetCompoundStates:
+			targetTransitionFcnSuccess = abs(sum(self.Tt[st].values()) - 1.0) < Util.EPSILON
+			if not targetTransitionFcnSuccess:
+				print abs(sum(self.Tt[st].values()) - 1.0)
+				return False
 		return True
 
 	def getTAsMatrix(self):
@@ -148,10 +161,10 @@ class TransitionFunction:
 
 	def eval(self, s1, a, s2):
 		"""Evaluates transition function for given initial state, action and end state."""
-		if self.T.get(s1, None) != None:
-			if self.T[s1].get(a, None) != None:
-				if self.T[s1][a].get(s2, None) != None:
-					return self.T[s1][a][s2]
+		#if self.T.get(s1, None) != None:
+		#	if self.T[s1].get(a, None) != None:
+		#		if self.T[s1][a].get(s2, None) != None:
+		#			return self.T[s1][a][s2]
 		#if s1 not in self.model.states:
 		#	print "Initial state invalid during transition function evaluation: " + str(s1)
 		#	return None
@@ -162,7 +175,9 @@ class TransitionFunction:
 		#	print "Action invalid during transition function evaluation: " + str(a)
 		#	return None
 		#print "Transition function evaluated as 0. Using optimal implementation, this evaluation should be unnecessary."
-		return 0.0
+		sa1, st1 = s1[0], s1[1]
+		sa2, st2 = s2[0], s2[1]
+		return self.evalTa(sa1, a, sa2)*self.evalTt(st1, st2)
 
 	def evalTa(self, s1, a, s2):
 		"""Evatuates agent compound transition function for given initial state and end state."""

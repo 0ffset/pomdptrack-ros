@@ -1,3 +1,40 @@
+import itertools
+
+EPSILON = 1e-15
+
+def cartesianPower2(S, n):
+	"""Returns the n-ary Cartesian power of set S, represented as a list."""
+	return list(__cartesianPower(list(S), n))
+def __cartesianPower(S, n):
+	ntuple = tuple()
+	if n == 1:
+		for el in S:
+			ntuple += ((el,),)
+		return ntuple
+
+	for el in S:
+		for subS in __cartesianPower(S, n-1):
+			ntuple += ((el,) + subS,)
+
+	return ntuple
+
+def cartesianPower(S, n):
+	return cartesianProduct(*[list(S)]*n)
+
+def cartesianProduct(*sets):
+	return list(itertools.product(*sets))
+
+def cartesianProduct2(*sets):
+	return list(__cartesianProduct(*sets))
+def __cartesianProduct2(*sets):
+	if not sets:
+		return tuple(((),))
+	tuples = tuple()
+	for item in sets[-1]:
+		for items in cartesianProduct(*sets[:-1]):
+			tuples += (items + (item,),)
+	return tuples
+
 def getOrderedCombinationsAsListOfLists(elements, n):
 	combinations = []
 	if n == 1:
